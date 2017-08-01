@@ -1,13 +1,45 @@
 /**
- *  Simple Device Viewer v 2.2.3
+ *  Simple Device Viewer v 2.5.2
  *
  *  Author: 
  *    Kevin LaFramboise (krlaframboise)
+ *
+ *  Contributors:
+ *    Tim Larson (codethug)
  *
  *  URL to documentation:
  *    https://community.smartthings.com/t/release-simple-device-viewer/42481?u=krlaframboise
  *
  *  Changelog:
+ *
+ *    2.5.2 (07/11/2017)
+ *      - Added Threshold and Notification Settings for Power Meter devices (added by codethug)
+ *      - Reduced timeouts by changing main screen to display capability page links regardless of whether or not there are devices with that capability.
+ *      - Added timeout checking to ensure user is always able to open the application.
+ *      - Added ranges for thresholds which will hopefull cause the negative sign to be displayed on iOS.
+ *      - Fixed issue with not being able to set the thresholds to 0.
+ *      - Removed default values from threshold settings and made application skip over thresholds that are empty.
+ *
+ *    2.5.1 (02/21/2017)
+ *      - Optionally display device's online/offline status in the dashboard.
+ *      - Optionally override last even threshold and send notifications for offline devices.
+ *      - Fixed timeout problem with Display Settings screen.
+ *
+ *    2.4.1 (01/21/2017)
+ *      - Switched to SmartThings last activity field and only use the device's event history and state history if the device activity is null.
+ *      - Added Acceleration Sensor Capability
+ *      - Added Dashboard Layout options for condensed and multiple columns.
+ *      - Added setting that allows you to choose which one is used.
+ *
+ *    2.3.2 (01/09/2017)
+ *      - Fixed attribute for valve capability.
+ *
+ *    2.3.1 (01/07/2017)
+ *      - Fixed problem with All Devices - States screen.
+ *
+ *    2.3.0 (01/06/2017)
+ *      - Added support for Energy Meter, Illuminance Measurement, Power Meter, Relative Humidity Measurement, Valve
+ *      - Added abort to "All Device - States" to prevent timeout errors.
  *
  *    2.2.3 (09/21/2016)
  *      - Still having occassional timeouts so made it abort sooner,
@@ -90,9 +122,7 @@ def mainPage() {
 					"lastEventPage")
 				getCapabilityPageLink(null)			
 			}		
-			getSelectedCapabilitySettings().each {
-				getCapabilityPageLink(it)
-			}
+			getSelectedCapabilitiesPageLinks()			
 		}
 		section("Settings") {			
 			getPageLink("devicesLink",
@@ -120,6 +150,23 @@ def mainPage() {
 	}
 }
 
+private getSelectedCapabilitiesPageLinks() {
+	def startTime = new Date().time
+	def aborted = false
+	def timeout = 5000
+	def selectedCaps = getSelectedCapabilitySettings(timeout)
+	
+	if (new Date().time - startTime > timeout) {
+		aborted = true
+	}
+	selectedCaps.each {		
+		getCapabilityPageLink(it)
+	}
+	if (aborted) {
+		paragraph "Unable to load items within the allowed time.  Check the Choose Devices screen to make sure each device is only selected once.  If that doesn't eliminate this message, try reducing the number of Capabilities selected in the Display Settings screen."
+	}
+}
+
 private getDashboardHref() {
 	if (!state.endpoint) {
 		href "enableDashboardPage", title: "Enable Dashboard", description: ""
@@ -137,16 +184,19 @@ def devicesPage() {
 			input "actuators", "capability.actuator",
 				title: "Which Actuators?",
 				multiple: true,
+				hideWhenEmpty: true,
 				required: false
 			input "sensors", "capability.sensor",
 				title: "Which Sensors?",
 				multiple: true,
+				hideWhenEmpty: true,
 				required: false			
 			capabilitySettings().each {				
 				input "${getPrefName(it)}Devices",
 					"capability.${getPrefType(it)}",
 					title: "Which ${getPluralName(it)}?",
 					multiple: true,
+					hideWhenEmpty: true,
 					required: false
 			}			
 		}		
@@ -161,23 +211,36 @@ def displaySettingsPage() {
 				title: "Display Which Capabilities?",
 				multiple: true,
 				options: getCapabilitySettingNames(false),
-				required: false
+				required: false,
+				submitOnChange: true
 		}		
 		section ("Device Capability Exclusions") {
 			paragraph "The capability pages display all the devices that support the capability by default, but these fields allow you to exclude devices from each page."
-			input "lastEventExcludedDevices",
-				"enum",
-				title: "Exclude these devices from the Last Events page:",
+			
+			input "enabledExclusions", "enum",
+				title: "Enable Device Exclusions for Which Capabilities?",
 				multiple: true,
+				options: getCapabilitySettingNames(true),
 				required: false,
-				options:getExcludedDeviceOptions(null)
-			capabilitySettings().each {
-				input "${getPrefName(it)}ExcludedDevices",
+				submitOnChange: true
+			
+			if (settings?.enabledExclusions?.find { it == "Events" }) {
+				input "lastEventExcludedDevices",
 					"enum",
-					title: "Exclude these devices from the ${getPluralName(it)} page:",
+					title: "Exclude these devices from the Last Events page:",
 					multiple: true,
 					required: false,
-					options: getDisplayExcludedDeviceOptions(it)
+					options:getExcludedDeviceOptions(null)
+			}
+			capabilitySettings().each { cap ->
+				if (settings?.enabledExclusions?.find { it == getPluralName(cap) }) {
+					input "${getPrefName(cap)}ExcludedDevices",
+						"enum",
+						title: "Exclude these devices from the ${getPluralName(cap)} page:",
+						multiple: true,
+						required: false,
+						options: getDisplayExcludedDeviceOptions(cap)
+				}
 			}	
 		}
 	}
@@ -203,17 +266,27 @@ def thresholdsPage() {
 			input "lowBatteryThreshold", "number",
 				title: "Enter Low Battery %:",
 				multiple: false,
-				defaultValue: 25			
+				range:"0..100"
 		}
 		section("Temperature Thresholds") {
 			input "lowTempThreshold", "number",
 				title: "Enter Low Temperature:",
 				required: false,
-				defaultValue: 63
+				range:"-200..200"
 			input "highTempThreshold", "number",
 				title: "Enter High Temperature:",
 				required: false,
-				defaultValue: 73			
+				range:"-200..200"
+		}
+		section("Power Thresholds") {
+			input "lowPowerThreshold", "number",
+				title: "Enter Low Power in Watts:",
+				required: false,
+				range:"0..100000"
+			input "highPowerThreshold", "number",
+				title: "Enter High Power in Watts:",
+				required: false,
+				range:"0..100000"
 		}
 		section("Last Event Thresholds") {
 			input "lastEventThreshold", "number",
@@ -224,7 +297,11 @@ def thresholdsPage() {
 				title: "Choose unit of time:",
 				required: false,
 				defaultValue: "days",
-				options: ["seconds", "minutes", "hours", "days"]			
+				options: ["seconds", "minutes", "hours", "days"]
+			input "lastEventThresholdOverride", "bool",
+				title: "Override Last Event Threshold for Offline Devices?",
+				required: false,
+				defaultValue: false
 		}
 	}
 }
@@ -283,6 +360,21 @@ def notificationsPage() {
 				multiple: true,
 				required: false,
 				options: getExcludedDeviceOptions("Temperature Measurement")
+		}
+		section ("Power Notifications") {
+			input "powerNotificationsEnabled", "bool",
+				title: "Send Power Notifications?",
+				defaultValue: false,
+				required: false
+			input "powerNotificationsRepeat", "number",
+				title: "Send repeat notifications every: (hours)",
+				defaultValue: 0,
+				required: false
+			input "powerNotificationsExcluded", "enum",
+				title: "Exclude these devices from power notifications:",
+				multiple: true,
+				required: false,
+				options: getExcludedDeviceOptions("Power Meter")
 		}
 		section ("Last Event Notifications") {
 			input "lastEventNotificationsEnabled", "bool",
@@ -359,7 +451,7 @@ def otherSettingsPage() {
 				defaultValue: true,
 				required: false
 			input "tempSortByValue", "bool",
-				title: "Sort by Temperature Value?",
+				title: "Sort by Measurement Value?",
 				defaultValue: true,
 				required: false
 			input "lastEventSortByValue", "bool",
@@ -368,6 +460,11 @@ def otherSettingsPage() {
 				required: false			
 		}	
 		section ("Last Event Accuracy") {
+			input "checkHistoryThreshold", "number",
+				title: "Check History Threshold: (Hours)\n(This SmartApp uses the device's last activity field, but this setting allows you to specify the number of hours the last activity has to be behind before manually retrieving the last event from the device history.)",
+				defaultValue: 12,
+				range: "1..168",
+				required: false
 			input "lastEventAccuracy", "number",
 				title: "Accuracy Level (1-25)\n(Setting this to a higher number will improve the accuracy for devices that generate a lot of events, but if you're seeing timeout errors in Live Logging, you should set this to a lower number.)",
 				defaultValue: 8,
@@ -412,7 +509,8 @@ def dashboardSettingsPage() {
 			if (state.endpoint) {
 				log.info "Dashboard Url: ${api_dashboardUrl()}"
 				input "dashboardRefreshInterval", "number", 
-					title: "Dashboard Refresh Interval: (seconds)",
+					title: "Dashboard Refresh Interval: (60-86400 seconds)",
+					range: "60..86400",
 					defaultValue: 300,
 					required: false
 				input "dashboardDefaultView", "enum",
@@ -424,6 +522,15 @@ def dashboardSettingsPage() {
 					defaultValue: "Top of Page",
 					required: false,
 					options: ["Top of Page", "Bottom of Page"]
+				input "dashboardLayout", "enum", 
+					title: "Layout:", 
+					defaultValue: "Normal",
+					required: false,
+					options: ["Normal", "Condensed - 1 Column", "Condensed - 2 Column", "Condensed - 3 Column"]
+				input "displayOnlineOfflineStatus", "bool",
+					title: "Display Online/Offline Status:",
+					defaultValue: false,
+					required: false
 				input "customCSS", "text",
 					title:"Enter CSS rules that should be appended to the dashboard's CSS file.",
 					required: false
@@ -577,12 +684,35 @@ def capabilityPage(params) {
 			}
 		}
 		else {
-			section("All Selected Capabilities") {
-				getParagraphs(getAllDevices().collect { 
-					getDeviceAllCapabilitiesListItem(it) 
-				})
-			}
+			getAllSelectedCapabilitiesSection()
 		}			
+	}
+}
+
+private getAllSelectedCapabilitiesSection() {
+	section("All Selected Capabilities") {
+		def startTime = new Date().time
+		def timeout = 15000
+		def aborted = false
+		def capListItems = []
+		
+		def selectedCapSettings = getSelectedCapabilitySettings(timeout)
+		
+		getAllDevices().each {
+			if (new Date().time - startTime > timeout) {
+				aborted = true
+			}
+			else {
+				capListItems << getDeviceAllCapabilitiesListItem(selectedCapSettings, it)
+			}
+		}
+		
+		if (aborted) {
+			paragraph "Unable to load the states of all devices within the allowed time.  If you've selected a lot of devices and capabilities, you might not be able to use the 'All Devices - States' view."
+		}
+		if (capListItems) {
+			getParagraphs(capListItems)
+		}
 	}
 }
 
@@ -642,14 +772,14 @@ private getDevicesByCapability(name, excludeList=null) {
 		.sort() { it.displayName.toLowerCase() }, excludeList)	
 }
 
-private getDeviceAllCapabilitiesListItem(device) {
+private getDeviceAllCapabilitiesListItem(selectedCapSettings, device) {
 	def listItem = [
 		sortValue: device.displayName
-	]	
-	getSelectedCapabilitySettings().each {
-		//if (device.hasCapability(getCapabilityName(it))) {
+	]		
+	selectedCapSettings.each {
+		if (device.hasCapability(getCapabilityName(it))) {
 			listItem.status = (listItem.status ? "${listItem.status}, " : "").concat(getDeviceCapabilityStatusItem(device, it).status)
-		//}
+		}
 	}
 	listItem.title = getDeviceStatusTitle(device, listItem.status)
 	return listItem
@@ -718,7 +848,7 @@ private getDeviceLastEventListItem(device) {
 	
 	listItem.title = getDeviceStatusTitle(device, listItem.status)
 	listItem.sortValue = settings.lastEventSortByValue != false ? listItem.value : device.displayName
-	listItem.image = getLastEventImage(lastEventTime)
+	listItem.image = getLastEventImage(lastEventTime, device.status)
 	return listItem
 }
 
@@ -823,11 +953,20 @@ private String getDeviceStatusTitle(device, status) {
 		status = "N/A"
 	}
 	if (state.refreshingDashboard) {
-		return device.displayName
+		return "${device.displayName}${getOnlineOfflineStatus(device.status)}"
 	}
 	else {
-		return "${status?.toUpperCase()} -- ${device.displayName}"
+		return "${status} -- ${device.displayName}"
 	}	
+}
+
+private getOnlineOfflineStatus(deviceStatus) {
+	if (settings?.displayOnlineOfflineStatus && deviceStatus?.toLowerCase() in ["online", "offline"]) {
+		return " (${deviceStatus.toLowerCase()})"
+	}
+	else {
+		return ""
+	}
 }
 
 private getDeviceCapabilityStatusItem(device, cap) {
@@ -857,8 +996,11 @@ private getCapabilityStatusItem(cap, sortValue, value) {
 		if (item.status == getActiveState(cap) && !state.refreshingDashboard) {
 			item.status = "*${item.status}"
 		}
-		
+			
 		switch (cap.name) {
+			case "Acceleration Sensor":
+				item.image = getAccelerationImage(item.value)
+				break
 			case "Battery":			
 				item.status = "${item.status}%"
 				item.image = getBatteryImage(item.value)
@@ -867,11 +1009,7 @@ private getCapabilityStatusItem(cap, sortValue, value) {
 				}				
 				break
 			case "Temperature Measurement":
-				item.status = "${item.status}°${location.temperatureScale}"
 				item.image = getTemperatureImage(item.value)
-				if (tempSortByValue != false) {
-					item.sortValue = safeToInteger(item.value)
-				}
 				break
 			case "Alarm":
 				item.image = getAlarmImage(item.value)
@@ -884,6 +1022,9 @@ private getCapabilityStatusItem(cap, sortValue, value) {
 				break
 			case "Motion Sensor":
 				item.image = getMotionImage(item.value)
+				break
+			case "Power Meter":
+				item.image = getPowerImage(item.value)
 				break
 			case "Presence Sensor":
 				item.image = getPresenceImage(item.value)
@@ -901,6 +1042,16 @@ private getCapabilityStatusItem(cap, sortValue, value) {
 				item.image = getWaterImage(item.value)
 				break
 		}
+		
+		if (cap?.units != null) {
+			item.status = "${item.status}${cap.units}"
+			if (tempSortByValue != false) {
+				item.sortValue = safeToFloat(item.value)
+			}
+		}
+		else {
+			item.status = "${item.status}".toUpperCase()
+		}
 	}
 	else {
 		item.status = "N/A"
@@ -908,12 +1059,17 @@ private getCapabilityStatusItem(cap, sortValue, value) {
 	return item
 }
 
-private getSelectedCapabilitySettings() {	
+private getSelectedCapabilitySettings(timeout) {	
 	if (!settings.enabledCapabilities) {
 		return capabilitySettings().findAll { devicesHaveCapability(getCapabilityName(it)) }
 	}
 	else {
-		return capabilitySettings().findAll {	(getPluralName(it) in settings.enabledCapabilities) && devicesHaveCapability(getCapabilityName(it)) }
+		def startTime = new Date().time
+		return capabilitySettings().findAll {	
+			if (new Date().time - startTime <= timeout) {
+				(getPluralName(it) in settings.enabledCapabilities)
+			}
+		}
 	}
 }
 
@@ -958,14 +1114,14 @@ private boolean isDevice(obj) {
 	}
 }
 
-private String getLastEventImage(lastEventTime) {
-	def status = lastEventIsOld(lastEventTime) ? "warning" : "ok"
+private String getLastEventImage(lastEventTime, deviceStatus) {
+	def status = lastEventIsOld(lastEventTime, deviceStatus) ? "warning" : "ok"
 	return getImagePath("${status}.png")
 }
 
-private boolean lastEventIsOld(lastEventTime) {	
+private boolean lastEventIsOld(lastEventTime, deviceStatus) {	
 	try {
-		if (!lastEventTime) {
+		if (!lastEventTime || offlineOverride(deviceStatus)) {
 			return true
 		}
 		else {
@@ -975,6 +1131,15 @@ private boolean lastEventIsOld(lastEventTime) {
 	catch (e) {
 		return true
 	}
+}
+
+private boolean offlineOverride(deviceStatus) {
+	return (settings?.lastEventThresholdOverride && (deviceStatus?.toLowerCase() == "offline"))
+}
+
+private String getAccelerationImage(currentState) {
+	def status = (currentState == "active") ? "active" : "inactive"
+	return getImagePath("acceleration-${status}.png")
 }
 
 private String getPresenceImage(currentState) {
@@ -1049,6 +1214,17 @@ private String getTemperatureImage(tempVal) {
 		status = "low"
 	}	
 	return getImagePath("${status}-temp.png")
+}
+
+private String getPowerImage(powerVal) {		
+	def status = "ok"
+	if (powerIsHigh(powerVal)) {
+		status = "warning"
+	}
+	else if (powerIsLow(powerVal)) {
+		status = "warning"
+	}	
+	return getImagePath("${status}.png")
 }
 
 private String getImagePath(imageName) {
@@ -1164,6 +1340,7 @@ def performScheduledTasks() {
 }
 
 void pollDevices() {
+	log.warn "Polling Devices"
 	logDebug "Polling Devices"
 	state.lastDevicePoll = new Date().time	
 	getDevicesByCapability("Polling", pollingExcluded)*.poll()
@@ -1195,18 +1372,35 @@ void refreshDeviceActivityTypeCache(activityType) {
 		
 		def deviceIndex = (safeToInteger(state."${activityType}DeviceIndex", -1))
 		
+		def checkHistoryCutoff = (new Date().time - (safeToInteger(settings?.checkHistoryThreshold, 12) * 60 * 60 * 1000))
+		
 		for (int i= 0; i < deviceCount; i++) {
 			
 			deviceIndex += 1
 			deviceIndex = (deviceIndex >= deviceCount) ? 0 : deviceIndex
 			def device = devices[deviceIndex]
 			
-			def lastActivity 
-			if (activityType == "event") {
-				lastActivity = getDeviceLastDeviceEvent(device)
+			def lastActivity
+			def lastActivityDate = device.getLastActivity()
+			if (lastActivityDate && (lastActivityDate.time >= checkHistoryCutoff)) {
+				lastActivity = [
+					name: "unknown",
+					value: "",
+					time: lastActivityDate.time,
+					type: activityType
+				]
 			}
 			else {
-				lastActivity = getDeviceLastStateChange(device)		
+				if (activityType == "event") {
+					if (!lastActivity) {
+						lastActivity = getDeviceLastDeviceEvent(device)
+					}
+				}
+				else {
+					if (!lastActivity) {
+						lastActivity = getDeviceLastStateChange(device)
+					}
+				}
 			}
 			
 			if (lastActivity) {
@@ -1275,10 +1469,13 @@ def checkDevices() {
 	state.currentCheckSent = 0
 		
 	if (settings.batteryNotificationsEnabled) {
-		runIn(61, checkBatteries)
+		runIn(90, checkBatteries)
 	}			
 	if (settings.temperatureNotificationsEnabled) {
-		runIn(30, checkTemperatures)
+		runIn(61, checkTemperatures)
+	}			
+	if (settings.powerNotificationsEnabled) {
+		runIn(30, checkPowers)
 	}			
 	if (settings.lastEventNotificationsEnabled) {
 		checkLastEvents()
@@ -1288,6 +1485,7 @@ def checkDevices() {
 private canCheckDevices(lastCheck) {	
 	return (settings.batteryNotificationsEnabled ||
 		settings.temperatureNotificationsEnabled ||
+		settings.powerNotificationsEnabled ||
 		settings.lastEventNotificationsEnabled) &&
 		timeElapsed((lastCheck ?: 0) + msMinute(5), true)
 }
@@ -1316,7 +1514,34 @@ private boolean tempIsHigh(val) {
 }
 
 private boolean tempIsLow(val) {
-	isBelowThreshold(val, lowTempThreshold, 63)
+	isBelowThreshold(val, lowTempThreshold, 63)	
+}
+
+def checkPowers() {
+	logDebug "Checking Powers"
+	def cap = getCapabilitySettingByName("Power Meter")
+	
+	getDevicesByCapability("Power Meter", powerNotificationsExcluded)?.each {	
+		def item = getDeviceCapabilityStatusItem(it, cap)
+		
+		def message = null
+		if (powerIsHigh(item.value)) {
+			message = "High Power Alert - ${getDeviceStatusTitle(it, item.status)}"			
+		}
+		else if (powerIsLow(item.value)) {			
+			message = "Low Power Alert - ${getDeviceStatusTitle(it, item.status)}"			
+		}
+		
+		handleDeviceNotification(it, message, "power", powerNotificationsRepeat)
+	}
+}
+
+private boolean powerIsHigh(val) {
+	isAboveThreshold(val, highPowerThreshold, 500)
+}
+
+private boolean powerIsLow(val) {
+	isBelowThreshold(val, lowPowerThreshold, 50)
 }
 
 def checkBatteries() {
@@ -1337,16 +1562,26 @@ private boolean batteryIsLow(batteryLevel) {
 }
 
 private boolean isAboveThreshold(val, threshold, int defaultThreshold) {
-	safeToInteger(val) > safeToInteger(threshold, defaultThreshold)	
+	if (threshold == null) {
+		return false
+	}
+	else {
+		return safeToInteger(val) > safeToInteger(threshold, defaultThreshold)
+	}
 }
 
 private boolean isBelowThreshold(val, threshold, int defaultThreshold) {
-	safeToInteger(val) < safeToInteger(threshold,defaultThreshold)	
+	if (threshold == null) {
+		return false
+	}
+	else {
+		safeToInteger(val) < safeToInteger(threshold,defaultThreshold)
+	}
 }
 
 private int safeToInteger(val, defaultVal=0) {
 	try {
-		if (val && "$val".isNumber()) {
+		if (val != null && "$val".isNumber()) {
 			if ("$val".isInteger()) {
 				return "$val".toInteger()
 			}
@@ -1371,13 +1606,43 @@ private int safeToInteger(val, defaultVal=0) {
 	}
 }
 
+private int safeToFloat(val, defaultVal=0) {
+	try {
+		if (val && "$val".isNumber()) {
+			if ("$val".isInteger() || "$val".isFloat() || "$val".isDouble()) {
+				return "$val".toFloat()
+			}			
+			else {
+				logDebug "Unable to parse $val to Integer so returning 0"
+				return 0
+			}
+		}
+		else {
+			return safeToFloat(defaultVal, 0)
+		}		
+	}
+	catch (e) {
+		logDebug "safeToFloat($val, $defaultVal) failed with error $e"
+		return 0
+	}
+}
+
 def checkLastEvents() {
 	logDebug "Checking Last Events"
 	removeExcludedDevices(getAllDevices(), lastEventNotificationsExcluded)?.each {
 		
 		def item = getDeviceLastEventListItem(it)
-		def message = item.value > getLastEventThresholdMS() ? "Last Event Alert - ${getDeviceStatusTitle(it, item.status)}" : null
+
+		def isOld = (item.value > getLastEventThresholdMS() || offlineOverride(it.status))
 		
+		def message = null
+		if (isOld) {
+			message = "Last Event Alert - ${getDeviceStatusTitle(it, item.status)}"
+			if (offlineOverride(it.status)) {
+				message = "${message} (OFFLINE)"
+			}
+		}
+		   		
 		handleDeviceNotification(it, message, "lastEvent", lastEventNotificationsRepeat)
 	}
 }
@@ -1543,7 +1808,14 @@ private String getPluralName(capabilitySetting) {
 
 
 private capabilitySettings() {
-	[	
+	[		
+		[
+			name: "Acceleration Sensor",
+			prefType: "accelerationSensor",
+			attributeName: "acceleration",
+			activeState: "active",
+			imageOnly: true
+		],
 		[
 			name: "Alarm",
 			activeState: "off",
@@ -1566,7 +1838,20 @@ private capabilitySettings() {
 			attributeName: "contact",
 			activeState: "open",
 			imageOnly: true
-		],		
+		],
+		[
+			name: "Energy Meter",
+			prefType: "energyMeter",
+			attributeName: "energy",
+			units: " kWh"
+		],
+		[
+			name: "Illuminance Measurement",
+			pluralName: "Illuminance Sensors",
+			prefType: "illuminanceMeasurement",
+			attributeName: "illuminance",
+			units: " lx"
+		],
 		[
 			name: "Light",
 			prefName: "light",
@@ -1589,11 +1874,24 @@ private capabilitySettings() {
 			imageOnly: true
 		],
 		[
+			name: "Power Meter",
+			prefType: "powerMeter",
+			attributeName: "power",
+			units: " W"
+		],
+		[
 			name: "Presence Sensor",
 			prefType: "presenceSensor",
 			attributeName: "presence",
 			activeState: "present",
 			imageOnly: true
+		],
+		[
+			name: "Relative Humidity Measurement",
+			pluralName: "Relative Humidity Sensors",
+			prefType: "relativeHumidityMeasurement",
+			attributeName: "humidity",
+			units: "%"
 		],
 		[
 			name: "Smoke Detector",
@@ -1612,8 +1910,14 @@ private capabilitySettings() {
 			name: "Temperature Measurement",
 			pluralName: "Temperature Sensors",
 			prefType: "temperatureMeasurement",
-			attributeName: "temperature"
-		],		
+			attributeName: "temperature",
+			units: "°${location.temperatureScale}"
+		],
+		[
+			name: "Valve",
+			activeState: "open",
+			attributeName: "contact"
+		],
 		[
 			name: "Water Sensor",
 			prefType: "waterSensor",
@@ -1708,7 +2012,7 @@ def api_dashboard() {
 		}
 		
 		menu = api_getMenuHtml(currentUrl)
-		// footer = api_getPageFooter(null, currentUrl)
+		footer = api_getPageFooter(null, currentUrl)
 		
 		if (params.capability == "events") {
 			def items = getAllDeviceLastEventListItems()?.unique()
@@ -1776,7 +2080,7 @@ private api_getMenuHtml(currentUrl) {
 	
 	html += api_getMenuItemHtml("Events", "warning", api_dashboardUrl("events"))
 	
-	getSelectedCapabilitySettings().each {
+	getSelectedCapabilitySettings(15000).each {
 		html += api_getMenuItemHtml(getPluralName(it), getPrefName(it), api_dashboardUrl(getPluralName(it)))
 	}
 	
@@ -1927,14 +2231,30 @@ private api_getJS() {
 private api_getCSS() {
 	// return "<link rel=\"stylesheet\" href=\"${getResourcesUrl()}/dashboard.css\">"
 	
-	def css = "body {	font-size: 100%;	text-align:center;	font-family:Helvetica,arial,sans-serif;	margin:0 0 10px 0;	background-color: #000000;}header, nav, section, footer {	display: block;	text-align:center;}header {	margin: 0 0 0 0;	padding: 4px 0 4px 0;	width: 100%;		font-weight: bold;	font-size: 100%;	background-color:#808080;	color:#ffffff;}nav.top{	padding-top: 0;}nav.bottom{	padding: 4px 4px 4px 4px;}section {	padding: 10px 20px 40px 20px;}.command-results {	background-color: #d6e9c6;	margin: 0 20px 20px 20px;	padding: 10px 20px 10px 20px;	border-radius: 100px;}.command-results h1 {	margin: 0 0 0 0;}.command-results ul {	list-style: none;}.command-results li {	line-height: 1.5;	font-size: 120%;}.dashboard-url {	display:block;	width:100%;	font-size: 80%;}.device-id-none{	background-color: #d6e9c6 !important;}.refresh {	background-image: url('refresh.png');}.alarm, .alarm-both {	background-image: url('alarm-both.png');}.alarm-siren {	background-image: url('alarm-siren.png');}.alarm-strobe {	background-image: url('alarm-strobe.png');}.alarm-off {	background-image: url('alarm-off.png');}.battery, .normal-battery {	background-image: url('normal-battery.png');}.normal-75-battery {	background-image: url('normal-75-battery.png');}.normal-50-battery {	background-image: url('normal-50-battery.png');}.normal-25-battery {	background-image: url('normal-25-battery.png');}.low-battery {	background-image: url('low-battery.png');}.open {	background-image: url('open.png');}.contactSensor, .closed {	background-image: url('closed.png');}.light, .light-on {	background-image: url('light-on.png');}.light-off {	background-image: url('light-off.png');}.lock, .locked{	background-image: url('locked.png');}.unlocked {	background-image: url('unlocked.png');}.motionSensor, .motion {	background-image: url('motion.png');}.no-motion {	background-image: url('no-motion.png');}.presenceSensor, .present {	background-image: url('present.png');}.not-present {	background-image: url('not-present.png');}.smokeDetector, .smoke-detected {	background-image: url('smoke-detected.png');}.smoke-clear {	background-image: url('smoke-clear.png');}.switch, .switch-on {	background-image: url('switch-on.png');}.switch-off {	background-image: url('switch-off.png');}.temperatureMeasurement, .normal-temp {	background-image: url('normal-temp.png');}.low-temp {	background-image: url('low-temp.png');}.high-temp {	background-image: url('high-temp.png');}.waterSensor, .dry {	background-image: url('dry.png');}.wet {	background-image: url('wet.png');}.ok {	background-image: url('ok.png');}.warning {	background-image: url('warning.png');}.device-item {	width: 200px;	display: inline-block;	background-color: #ffffff;	margin: 2px 2px 2px 2px;	padding: 4px 4px 4px 4px;	border-radius: 5px;}.item-image-text {	position: relative;	height: 75px;	width:100%;	display: table;}.item-image {	display: table-cell;	position: relative;	width: 35%;	border: 1px solid #cccccc;	border-radius: 5px;	background-repeat:no-repeat;	background-size:auto 70%;	background-position: center bottom;}.item-status {	width: 100%;	font-size:75%;	display:inline-block;}.item-text {	display: table-cell;	width: 65%;	position: relative;	vertical-align: middle;}a.item-text {	color:#000000;}.item-text.wait, .menu-item a.wait{	color:#ffffff;	background-image:url('wait.gif');	background-repeat:no-repeat;	background-position: center bottom;}.item-text.wait{	background-size:auto 100%;}.label {	display:inline-block;	vertical-align: middle;	line-height:1.4;	font-weight: bold;	padding-left:4px;}.menu-item {	display: inline-block;	background-color:#808080;	padding:4px 4px 4px 4px;	border:1px solid #000000;	border-radius: 5px;	font-weight:bold;}.menu-item .item-image{	display:table-cell;	background-size:auto 45%;	height:50px;	width:75px;	border:0;	border-radius:0;}.menu-item .item-image.switch,.menu-item .item-image.light,.menu-item .item-image.battery,.menu-item .item-image.alarm,.menu-item .item-image.refresh {	background-size:auto 60%;}.menu-item a, .menu-item a:link, .menu-item a:hover, .menu-item a:active,.menu-item a:visited {	color: #ffffff;		text-decoration:none;}.menu-item:hover, .menu-item:hover a, .menu-item a:hover { 	background-color:#ffffff;	color:#000000 !important;}.menu-item span {	width: 100%;	font-size:75%;	display:inline-block;}@media (max-width: 639px){	.device-item {		width:125px;	}	.item-image-text {		height: 65px;	}	.item-image {		background-size: auto 60%;	}	.item-text .label {		font-size: 80%;		line-height: 1.2;	}}"
+	def css = "body {	font-size: 100%;	text-align:center;	font-family:Helvetica,arial,sans-serif;	margin:0 0 10px 0;	background-color: #000000;}header, nav, section, footer {	display: block;	text-align:center;}header {	margin: 0 0 0 0;	padding: 4px 0 4px 0;	width: 100%;		font-weight: bold;	font-size: 100%;	background-color:#808080;	color:#ffffff;}nav.top{	padding-top: 0;}nav.bottom{	padding: 4px 4px 4px 4px;}section {	padding: 10px 20px 40px 20px;}.command-results {	background-color: #d6e9c6;	margin: 0 20px 20px 20px;	padding: 10px 20px 10px 20px;	border-radius: 100px;}.command-results h1 {	margin: 0 0 0 0;}.command-results ul {	list-style: none;}.command-results li {	line-height: 1.5;	font-size: 120%;}.dashboard-url {	display:block;	width:100%;	font-size: 80%;}.device-id-none{	background-color: #d6e9c6 !important;}.refresh {	background-image: url('refresh.png');}.acceleration-active {	background-image: url('acceleration-active.png');}.acceleration-inactive{	background-image: url('acceleration-inactive.png');}.alarm, .alarm-both {	background-image: url('alarm-both.png');}.alarm-siren {	background-image: url('alarm-siren.png');}.alarm-strobe {	background-image: url('alarm-strobe.png');}.alarm-off {	background-image: url('alarm-off.png');}.battery, .normal-battery {	background-image: url('normal-battery.png');}.normal-75-battery {	background-image: url('normal-75-battery.png');}.normal-50-battery {	background-image: url('normal-50-battery.png');}.normal-25-battery {	background-image: url('normal-25-battery.png');}.low-battery {	background-image: url('low-battery.png');}.open {	background-image: url('open.png');}.contactSensor, .closed {	background-image: url('closed.png');}.light, .light-on {	background-image: url('light-on.png');}.light-off {	background-image: url('light-off.png');}.lock, .locked{	background-image: url('locked.png');}.unlocked {	background-image: url('unlocked.png');}.motionSensor, .motion {	background-image: url('motion.png');}.no-motion {	background-image: url('no-motion.png');}.presenceSensor, .present {	background-image: url('present.png');}.not-present {	background-image: url('not-present.png');}.smokeDetector, .smoke-detected {	background-image: url('smoke-detected.png');}.smoke-clear {	background-image: url('smoke-clear.png');}.switch, .switch-on {	background-image: url('switch-on.png');}.switch-off {	background-image: url('switch-off.png');}.temperatureMeasurement, .normal-temp {	background-image: url('normal-temp.png');}.low-temp {	background-image: url('low-temp.png');}.high-temp {	background-image: url('high-temp.png');}.waterSensor, .dry {	background-image: url('dry.png');}.wet {	background-image: url('wet.png');}.ok {	background-image: url('ok.png');}.warning {	background-image: url('warning.png');}.device-item {	width: 200px;	display: inline-block;	background-color: #ffffff;	margin: 2px 2px 2px 2px;	padding: 4px 4px 4px 4px;	border-radius: 5px;}.item-image-text {	position: relative;	height: 75px;	width:100%;	display: table;}.item-image {	display: table-cell;	position: relative;	width: 35%;	border: 1px solid #cccccc;	border-radius: 5px;	background-repeat:no-repeat;	background-size:auto 70%;	background-position: center bottom;}.item-status {	width: 100%;	font-size:75%;	display:inline-block;}.item-text {	display: table-cell;	width: 65%;	position: relative;	vertical-align: middle;}a.item-text {	color:#000000;}.item-text.wait, .menu-item a.wait{	color:#ffffff;	background-image:url('wait.gif');	background-repeat:no-repeat;	background-position: center bottom;}.item-text.wait{	background-size:auto 100%;}.label {	display:inline-block;	vertical-align: middle;	line-height:1.4;	font-weight: bold;	padding-left:4px;}.menu-item {	display: inline-block;	background-color:#808080;	padding:4px 4px 4px 4px;	border:1px solid #000000;	border-radius: 5px;	font-weight:bold;}.menu-item .item-image{	display:table-cell;	background-size:auto 45%;	height:50px;	width:75px;	border:0;	border-radius:0;}.menu-item .item-image.switch,.menu-item .item-image.light,.menu-item .item-image.battery,.menu-item .item-image.alarm,.menu-item .item-image.refresh {	background-size:auto 60%;}.menu-item a, .menu-item a:link, .menu-item a:hover, .menu-item a:active,.menu-item a:visited {	color: #ffffff;		text-decoration:none;}.menu-item:hover, .menu-item:hover a, .menu-item a:hover { 	background-color:#ffffff;	color:#000000 !important;}.menu-item span {	width: 100%;	font-size:75%;	display:inline-block;}@media (max-width: 639px){	.device-item {		width:125px;	}	.item-image-text {		height: 65px;	}	.item-image {		background-size: auto 60%;	}	.item-text .label {		font-size: 80%;		line-height: 1.2;	}}"
 	
 	css = css.replace("url('", "url('${getResourcesUrl()}/")
+	css += api_getLayoutCSS()
 	
 	if (settings?.customCSS) {
 		css += settings.customCSS
 	}
 	return "<style>$css</style>"
+}
+
+private api_getLayoutCSS() {
+	def layout = settings?.dashboardLayout ?: "1 Column"
+	def css = ""
+	if (layout?.toLowerCase()?.contains("condensed")) {
+		css = "section{padding:4px 0 0 0;}.device-item{width: 98%;padding:0 0 0 0;margin:0 0 0 0;border:0;border-radius:0;}.item-image-text{height:auto;padding-left:4px;}.item-image{background-position:left center;width:20%;border:0;border-radius:0;}.item-status{line-height:1.4;}.item-text{text-align:left;}"
+	}
+	if (layout?.contains("2")) {
+		css += ".device-item{width: 45%;margin: 0 2px;}"
+	}
+	if (layout?.contains("3")) {
+		css += ".device-item{width: 30%; margin: 0 1px;}"
+	}
+	return css ?: ""
 }
 
 private logDebug(msg) {

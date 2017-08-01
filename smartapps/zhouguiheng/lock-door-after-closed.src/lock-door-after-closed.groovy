@@ -54,7 +54,8 @@ def unlockHandler(evt) {
 	// It requires at least 10 seconds for Schlage Connect to accept lock command after unlocked.
 	runIn(11, lockTheDoor, [overwrite: false])
     runIn(15, lockTheDoor, [overwrite: false])
-    runIn(30, lockTheDoor, [overwrite: false])
+    runIn(40, lockTheDoor, [overwrite: false])
+    runIn(80, lockTheDoor, [overwrite: false])
     runIn(15 * 60, checkDoorLocked)
 }
 
