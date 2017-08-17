@@ -1,7 +1,7 @@
 /**
  *  Lock Door after Closed with Retries
  *
- *  Copyright 2016 Vincent
+ *  Copyright 2017 Vincent
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -43,31 +43,45 @@ def updated() {
 
 def initialize() {
 	subscribe(thesensor, "contact.closed", closeHandler)
+	subscribe(thesensor, "contact.open", openHandler)
 	subscribe(thelock, "lock.unlocked", unlockHandler)
+	subscribe(thelock, "lock.locked", lockHandler)
+    state.canLock = true
 }
 
 def closeHandler(evt) {
 	lockTheDoor()
-}
-
-def unlockHandler(evt) {
-	// It requires at least 10 seconds for Schlage Connect to accept lock command after unlocked.
-	runIn(11, lockTheDoor, [overwrite: false])
-    runIn(15, lockTheDoor, [overwrite: false])
-    runIn(40, lockTheDoor, [overwrite: false])
-    runIn(80, lockTheDoor, [overwrite: false])
-    runIn(15 * 60, checkDoorLocked)
-}
-
-def lockTheDoor() {
-    if ((thesensor.latestValue("contact") == "closed") && (thelock.latestValue("lock") != "locked")) {
-		thelock.lock()
+    for (delay in [15, 30, 60, 120, 180, 240, 480]) {
+    	runIn(delay, lockTheDoor, [overwrite: false])
     }
 }
 
-def checkDoorLocked() {
-	if (thelock.latestValue("lock") != "locked") {
-    	lockTheDoor()
-    	sendPush("Door is not locked for 15 minutes!")
+def openHandler(evt) {
+	unschedule(lockTheDoor)
+}
+
+def unlockHandler(evt) {
+	state.canLock = false
+
+	// It requires at least 10 seconds for Schlage Connect to accept lock command after unlocked.
+	runIn(11, allowLockAndLockTheDoor)
+    runIn(60, lockTheDoor, [overwrite: false])
+}
+
+def lockHandler(evt) {
+	unschedule(lockTheDoor)
+}
+
+def allowLockAndLockTheDoor() {
+	// log.debug("Lock allowed")
+	state.canLock = true
+    lockTheDoor()
+}
+
+def lockTheDoor() {
+	// log.debug("Checking the lock and contact states")
+    if (state.canLock && (thesensor.latestValue("contact") == "closed") && (thelock.latestValue("lock") != "locked")) {
+    	// log.debug("Sending lock command")
+		thelock.lock()
     }
 }
