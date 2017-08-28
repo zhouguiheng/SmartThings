@@ -57,19 +57,19 @@ def washerHandler(evt) {
     log.debug "Washer power: ${p}"
     if (p > 12) {
       state.tryingWasherOff = false
-      unsubscribe(washerOff)
-      if (p > 30) {
+      unschedule(washerOff)
+      if (p > 20) {
         washerOn()
       } else {
         if (washer.currentSwitch != "on" && !state.tryingWasherOn) {
           log.debug "Trying washer on"
           state.tryingWasherOn = true
-          runIn(60, washerOn)
+          runIn(120, washerOn)
         }
       }
     } else {
       state.tryingWasherOn = false
-      unsubscribe(washerOn)
+      unschedule(washerOn)
       if (washer.currentSwitch == "on" && !state.tryingWasherOff) {
         log.debug "Trying washer off"
         state.tryingWasherOff = true
