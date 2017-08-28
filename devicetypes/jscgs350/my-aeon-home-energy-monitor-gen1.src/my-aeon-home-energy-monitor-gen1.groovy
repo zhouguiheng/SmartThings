@@ -300,9 +300,9 @@ def zwaveEvent(physicalgraph.zwave.commands.meterv1.MeterReport cmd) {
 					sendEvent(name: "currentWATTS", value: dispValue as String, unit: "", displayed: false)
 					state.powerValue = newValue
 					if (state.displayDisabled) {
-						[name: "power", value: newValue, unit: "W", displayed: true]
+						[name: "power", value: Math.round(newValue), unit: "W", displayed: true]
 					} else {
-						[name: "power", value: newValue, unit: "W", displayed: false]
+						[name: "power", value: Math.round(newValue), unit: "W", displayed: false]
 					}
 				}
 			}
