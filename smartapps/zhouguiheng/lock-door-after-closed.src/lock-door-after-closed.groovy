@@ -65,6 +65,7 @@ def unlockHandler(evt) {
 
 	// It requires at least 10 seconds for Schlage Connect to accept lock command after unlocked.
 	runIn(11, allowLockAndLockTheDoor)
+    runIn(13, lockTheDoor, [overwrite: false])
     runIn(60, lockTheDoor, [overwrite: false])
 }
 
@@ -73,15 +74,15 @@ def lockHandler(evt) {
 }
 
 def allowLockAndLockTheDoor() {
-	// log.debug("Lock allowed")
+	log.debug("Lock allowed")
 	state.canLock = true
     lockTheDoor()
 }
 
 def lockTheDoor() {
-	// log.debug("Checking the lock and contact states")
+	log.debug("Checking the lock and contact states")
     if (state.canLock && (thesensor.latestValue("contact") == "closed") && (thelock.latestValue("lock") != "locked")) {
-    	// log.debug("Sending lock command")
+    	log.debug("Sending lock command")
 		thelock.lock()
     }
 }

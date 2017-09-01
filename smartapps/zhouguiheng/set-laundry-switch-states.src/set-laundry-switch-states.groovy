@@ -26,12 +26,17 @@ definition(
 preferences {
 	section("Washer:") {
 		input "washer", "capability.switch", required: true
+        input "minWasherPower", "number", title: "Minimum watts to turn on:", defaultValue: "20"
+        input "delayOffMinutes", "number", title: "Minutes at low power before turning off:", defaultValue: "3"
 	}
 	section("Dryer:") {
 		input "dryer", "capability.switch", required: true
+        input "minDryerPower", "number", title: "Minimum watts to turn on:", defaultValue: "20"
 	}
     section("Power meter:") {
     	input "power", "capability.powerMeter", required: true
+        input "washerAttribute", "string", title: "Attribute for washer:", defaultValue: "powerOne"
+        input "dryerAttribute", "string", title: "Attribute for dryer:", defaultValue: "powerTwo"
     }
 }
 
@@ -45,9 +50,8 @@ def updated() {
 }
 
 def initialize() {
-	subscribe(power, "powerOne", washerHandler)
-	subscribe(power, "powerTwo", dryerHandler)
-    state.tryingWasherOn = false
+	subscribe(power, washerAttribute, washerHandler)
+	subscribe(power, dryerAttribute, dryerHandler)
     state.tryingWasherOff = false
 }
 
@@ -55,25 +59,15 @@ def washerHandler(evt) {
   try {
     def p = evt.doubleValue
     log.debug "Washer power: ${p}"
-    if (p > 12) {
+    if (p >= minWasherPower) {
       state.tryingWasherOff = false
       unschedule(washerOff)
-      if (p > 20) {
-        washerOn()
-      } else {
-        if (washer.currentSwitch != "on" && !state.tryingWasherOn) {
-          log.debug "Trying washer on"
-          state.tryingWasherOn = true
-          runIn(120, washerOn)
-        }
-      }
+      washerOn()
     } else {
-      state.tryingWasherOn = false
-      unschedule(washerOn)
       if (washer.currentSwitch == "on" && !state.tryingWasherOff) {
         log.debug "Trying washer off"
         state.tryingWasherOff = true
-        runIn(60, washerOff)
+        runIn(delayOffMinutes * 60, washerOff)
       }
     }
   } catch (e) {
@@ -82,7 +76,6 @@ def washerHandler(evt) {
 }
 
 def washerOn() {
-  state.tryingWasherOn = false
   if (washer.currentSwitch != "on") {
     log.debug "Turn on washer"
     washer.on()
@@ -101,7 +94,7 @@ def dryerHandler(evt) {
   try {
     def p = evt.doubleValue
     log.debug "Dryer power: ${p}"
-    if (p > 20) {
+    if (p >= minDryerPower) {
       if (dryer.currentSwitch != "on") {
         log.debug "Turn on dryer"
         dryer.on()
