@@ -65,7 +65,7 @@ def initialize() {
 }
 
 def hoursSinceLastMedicineTaken() {
-	state.lastMedicineTakenTime == null ? 100 : (now() - state.lastMedicineTakenTime) / 1000
+	state.lastMedicineTakenTime == null ? 100 : (now() - state.lastMedicineTakenTime) / 1000 / 3600
 }
 
 def medicineTaken(evt) {
