@@ -86,7 +86,7 @@ def getDeviceHtml(devices, endpoint, commands) {
 }
 
 void updateSwitch() {
-	update(switches, ["on", "off"])
+	update(switches, ["on", "off", "stateOn", "stateOff"])
 }
 
 void updatePresence() {
