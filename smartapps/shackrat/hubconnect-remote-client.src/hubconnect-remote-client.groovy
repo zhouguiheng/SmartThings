@@ -231,7 +231,15 @@ def getDevice(params)
 */
 def remoteDeviceCommand()
 {
-	def commandParams = params.commandParams != "null" ? parseJson(URLDecoder.decode(params.commandParams)) : []
+	def deviceCommand = params.deviceCommand
+    def commandParams = []
+    if (params.commandParams != "null") {
+    	def receivedParams = params.commandParams
+        if (deviceCommand == "speak") {
+        	receivedParams = new String(receivedParams.decodeBase64())
+        }
+        commandParams = parseJson(URLDecoder.decode(receivedParams))
+    }
 
 	// Get the device
 	def device = getDevice(params)
@@ -242,8 +250,6 @@ def remoteDeviceCommand()
 	}
 
 	if (enableDebug) log.info "Received command from server: [\"${device.label ?: device.name}\": ${params.deviceCommand}]"
-
-	def deviceCommand = params.deviceCommand
 
 	// Fix for broken button ST drivers
 	if (deviceCommand == "push" && !device.hasCommand("push"))
