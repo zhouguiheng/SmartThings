@@ -34,8 +34,8 @@ metadata {
         attribute "powerOneDisp", "string"
         attribute "powerTwoDisp", "string"
         
-        attribute "powerOne", "string"
-        attribute "powerTwo", "string"
+        attribute "powerOne", "number"
+        attribute "powerTwo", "number"
         
         command "reset"
         command "configure"
@@ -241,7 +241,7 @@ def zwaveEvent(physicalgraph.zwave.commands.meterv1.MeterReport cmd) {
                     state.powerHighDisp = dispValue
                 }
                 state.powerValue = newValue
-                [name: "power", value: newValue, unit: "W", descriptionText: "Total Power: ${newValue} Watts"]
+                [name: "power", value: newValue, unit: "W", descriptionText: "Total: ${newValue}W"]
             }
 		}
  	}
@@ -270,7 +270,7 @@ def zwaveEvent(physicalgraph.zwave.commands.multichannelv3.MultiChannelCmdEncap 
 					if (dispValue != state.powerL1Disp) {
 						state.powerL1Disp = dispValue
                         state.powerL1 = newValue
-						sendEvent(name: "powerOneDisp", value: dispValue, unit: "", descriptionText: "L1 Power: ${formattedValue} Watts")
+						sendEvent(name: "powerOneDisp", value: dispValue, unit: "", descriptionText: "${c1Name}: ${formattedValue}W")
 						[name: "powerOne", value: newValue, unit: "W", displayed: false]
 						}	
                     }
@@ -308,7 +308,7 @@ def zwaveEvent(physicalgraph.zwave.commands.multichannelv3.MultiChannelCmdEncap 
 					if (dispValue != state.powerL2Disp) {
 							state.powerL2Disp = dispValue
 							state.powerL2 = newValue
-							sendEvent(name: "powerTwoDisp", value: dispValue, unit: "", descriptionText: "L2 Power: ${formattedValue} Watts")
+							sendEvent(name: "powerTwoDisp", value: dispValue, unit: "", descriptionText: "${c2Name}: ${formattedValue}W")
 							[name: "powerTwo", value: newValue, unit: "W", displayed: false]
 						}	
                     }

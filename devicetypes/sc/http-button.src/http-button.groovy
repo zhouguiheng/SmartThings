@@ -12,9 +12,12 @@ import groovy.json.JsonSlurper
 
 metadata {
 	definition (name: "HTTP Button", namespace: "sc", author: "SC") {
-	capability "Actuator"
-    capability "Switch"
-	capability "Sensor"
+		capability "Actuator"
+		capability "Switch"
+		capability "Sensor"
+
+		command "stateOn"
+        command "stateOff"
 	}
 
 	preferences {
@@ -50,14 +53,22 @@ def parse(String description) {
 	log.debug(description)
 }
 
-def on() {
-	log.debug "---Sending command--- ${DevicePathOn}"
+def stateOn() {
 	sendEvent(name: "switch", value: "on", isStateChange: true, display: false)
+}
+
+def on() {
+	stateOn()
+	log.debug "---Sending command--- ${DevicePathOn}"
 	runCmd(DevicePathOn)
 }
 
-def off() {
+def stateOff() {
 	sendEvent(name: "switch", value: "off", isStateChange: true, display: false)
+}
+
+def off() {
+	stateOff()
 	runCmd(DevicePathOff)
 }
 
