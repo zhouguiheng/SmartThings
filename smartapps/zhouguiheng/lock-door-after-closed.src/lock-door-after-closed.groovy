@@ -30,6 +30,13 @@ preferences {
     section("Select the door contact sensor:") {
     	input "thesensor", "capability.contactSensor", required: true
     }
+	section("Select notification devices after all locking attempts fail:") {
+		input "notifications", "capability.notification", multiple: true, required: false
+		input "message", "string", title: "Custom Message", required: false
+	}
+    section("Enable debug logging:") {
+        input "enableDebug", "bool", title: "Enable?", required: false
+    }
 }
 
 def installed() {
@@ -51,13 +58,11 @@ def initialize() {
 
 def closeHandler(evt) {
 	lockTheDoor()
-    for (delay in [15, 30, 60, 120, 180, 240, 480]) {
-    	runIn(delay, lockTheDoor, [overwrite: false])
-    }
+	scheduleLockingTasks();
 }
 
 def openHandler(evt) {
-	unschedule(lockTheDoor)
+	unscheduleLockingTasks()
 }
 
 def unlockHandler(evt) {
@@ -65,24 +70,51 @@ def unlockHandler(evt) {
 
 	// It requires at least 10 seconds for Schlage Connect to accept lock command after unlocked.
 	runIn(11, allowLockAndLockTheDoor)
-    runIn(13, lockTheDoor, [overwrite: false])
-    runIn(60, lockTheDoor, [overwrite: false])
+	if (thesensor.latestValue("contact") == "closed") {
+		scheduleLockingTasks()
+	}
 }
 
 def lockHandler(evt) {
 	unschedule(lockTheDoor)
+	unschedule(refreshLock)
+	unschedule(notifyOnFailure)
 }
 
 def allowLockAndLockTheDoor() {
-	log.debug("Lock allowed")
+	if (enableDebug) log.debug("Lock allowed")
 	state.canLock = true
     lockTheDoor()
 }
 
+def scheduleLockingTasks() {
+	runIn(3 * 60, refreshLock)
+	runIn(6 * 60, notifyOnFailure)
+	for (delay in [15, 30, 60, 2 * 60, 4 * 60, 5 * 60]) {
+		runIn(delay, lockTheDoor, [overwrite: false])
+	}
+}
+
+def unscheduleLockingTasks() {
+	unschedule(refreshLock)
+	unschedule(notifyOnFailure)
+	unschedule(lockTheDoor)
+}
+
 def lockTheDoor() {
-	log.debug("Checking the lock and contact states")
-    if (state.canLock && (thesensor.latestValue("contact") == "closed") && (thelock.latestValue("lock") != "locked")) {
-    	log.debug("Sending lock command")
-		thelock.lock()
-    }
+	if (enableDebug) log.debug("Checking the lock and contact states")
+	if (!state.canLock || thesensor.latestValue("contact") != "closed") return
+	if (enableDebug) log.debug("Sending lock command")
+	thelock.lock()
+}
+
+def refreshLock() {
+	if (enableDebug) log.debug("Refreshing the lock")
+	thelock.refresh()
+}
+
+def notifyOnFailure() {
+	if (notifications == null) return
+	def msg = message ? message : "Failed to lock ${thelock.label ? thelock.label : thelock.name}"
+	notifications.deviceNotification(msg)
 }

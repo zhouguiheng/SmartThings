@@ -36,6 +36,11 @@ preferences {
     section("Select the tone device:") {
     	input "toneDevice", "capability.tone", required: true
     }
+    section("How to play sound:") {
+        input "playType", "enum", title: "Type", options: ["beep", "playSound"], required: true
+        input "soundNumber", "number", title: "Sound number for playSound", required: false, defaultValue: 1
+        input "doneSoundNumber", "number", title: "Sound number for playSound when motion detected", required: false
+    }
     section("Between what time?") {
     	input "fromTime", "time", title: "From", required: true
         input "toTime", "time", title: "To", required: true
@@ -45,6 +50,9 @@ preferences {
     }
     section("Time to remind regardless location / presence sensor:") {
     	input "finalTime", "time", title: "Time to remind", required: true
+    }
+    section("Debug logging") {
+        input "enableLog", "bool", title: "Enable?", defaultValue: false
     }
 }
 
@@ -69,28 +77,39 @@ def hoursSinceLastMedicineTaken() {
 }
 
 def medicineTaken(evt) {
-	log.debug "medicineTaken() at ${now()}"
+	logDebug "medicineTaken() at ${now()}"
 	state.lastMedicineTakenTime = now()
+    if (playType != "beep" && doneSoundNumber != null) {
+        toneDevice.playSound(doneSoundNumber)
+    }
 }
 
 def nearMedicine(evt) {
-	log.debug "nearMedicine()"
+	logDebug "nearMedicine()"
     if (presenceSensor.latestValue("presence") != "present") return
 	maybeRemind(evt)
 }
 
 def maybeRemind(evt) {
-	log.debug "maybeRemind(), hours: ${hoursSinceLastMedicineTaken()}"
+	logDebug "maybeRemind(), hours: ${hoursSinceLastMedicineTaken()}"
 	if (hoursSinceLastMedicineTaken() < 6) return
-    log.debug "More than 6 hours"
-    if (!timeOfDayIsBetween(fromTime, toTime, new Date(), location.timeZone)) return
-    log.debug "Within given time"
+    logDebug "More than 6 hours"
+    if (!timeOfDayIsBetween(toDateTime(fromTime), toDateTime(toTime), new Date(), location.timeZone)) return
+    logDebug "Within given time"
     
     def df = new java.text.SimpleDateFormat("EEEE")
     df.setTimeZone(location.timeZone)
     def day = df.format(new Date())
     if (!days.contains(day)) return
-    log.debug "In given days"
+    logDebug "In given days"
 
-	toneDevice.beep()
+    if (playType == "beep") {
+        toneDevice.beep()
+    } else {
+        toneDevice.playSound(soundNumber)
+    }
+}
+
+def logDebug(msg) {
+    if (enableLog) log.debug msg
 }
